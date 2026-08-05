@@ -1,0 +1,51 @@
+name: Watch Ecomonos
+
+on:
+  schedule:
+    # Every 30 min ≈ 1440 billed minutes/month, inside the 2000 free minutes
+    # GitHub gives private repos. Public repos bill nothing, so there you can
+    # drop this to "*/15 * * * *". Either way GitHub's cron is best-effort and
+    # often runs 5-20 minutes late.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+# Never let two runs race on the state file.
+concurrency:
+  group: ecomonos-watcher
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Check for new videos
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: npm start
+
+      # Runs even if the step above failed, so anything already emailed is recorded.
+      - name: Save state
+        if: ${{ !cancelled() }}
+        run: |
+          if [[ -z "$(git status --porcelain state/)" ]]; then
+            echo "State unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: record last seen Ecomonos video [skip ci]"
+          git pull --rebase --autostash
+          git push
