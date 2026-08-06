@@ -46,6 +46,8 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore: record last seen Ecomonos video [skip ci]"
+          # add, not commit -a: en la primera ejecución el fichero aún no está trackeado.
+          git add state/
+          git commit -m "chore: record last seen Ecomonos video [skip ci]"
           git pull --rebase --autostash
           git push
