@@ -1,77 +1,56 @@
 # ecomonos-watcher
 
-Te manda un email a **polresinamartinez@gmail.com** cuando
-[Los Ecomonos](https://www.youtube.com/@ecomonos) publica un vídeo nuevo.
+Emails me whenever [Los Ecomonos](https://www.youtube.com/@ecomonos) puts out a new video.
 
-Lee el feed RSS público del canal, así que **no hace falta API key de YouTube ni cuota**.
-Un cron de GitHub Actions lo comprueba cada 30 minutos y envía el correo por Gmail.
+It reads the channel's public RSS feed, so no YouTube API key and nothing to keep under quota. A
+GitHub Actions cron checks every 30 minutes and sends the mail through Gmail. All the code lives in
+[`src/index.ts`](src/index.ts) — about 80 lines.
 
-Todo el código está en un único archivo: [`src/index.ts`](src/index.ts), 79 líneas.
+## Setup
 
-## Puesta en marcha
+You need a Gmail app password. The normal account password won't work over SMTP, so turn on
+[2-step verification](https://myaccount.google.com/signinoptions/twosv) and then generate one at
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). It's 16 characters.
 
-**1. Sube el repo a GitHub**
+Then add two secrets under *Settings → Secrets and variables → Actions*:
 
-```bash
-git remote add origin git@github.com:<tu-usuario>/ecomonos_info.git
-git push -u origin main
-```
+- `GMAIL_USER` — the Gmail it sends from
+- `GMAIL_APP_PASSWORD` — those 16 characters
 
-**2. Crea una contraseña de aplicación de Gmail**
+Mailing yourself from your own account works fine, it lands in the inbox like anything else.
 
-La contraseña normal de la cuenta no funciona por SMTP.
+Kick it off from *Actions → Watch Ecomonos → Run workflow*. The first run won't email you anything;
+it just notes which video is the newest right now, otherwise you'd get 15 mails in one go. After
+that every upload turns up in your inbox.
 
-1. Activa la verificación en 2 pasos: <https://myaccount.google.com/signinoptions/twosv>
-2. Genera la contraseña en <https://myaccount.google.com/apppasswords> → 16 caracteres.
+## How it knows a video is new
 
-Puedes enviarte el correo a ti mismo desde tu propio Gmail; llega a la bandeja de entrada.
-
-**3. Añade los secrets del repo**
-
-En *Settings → Secrets and variables → Actions*:
-
-| Secret | Valor |
-| --- | --- |
-| `GMAIL_USER` | El Gmail desde el que se envía |
-| `GMAIL_APP_PASSWORD` | La contraseña de aplicación de 16 caracteres |
-
-**4. Lánzalo**
-
-*Actions → Watch Ecomonos → Run workflow*.
-
-La primera ejecución **no envía nada**: solo apunta cuál es el último vídeo actual como punto de
-partida. Si no, recibirías 15 correos de golpe. A partir de ahí, cada vídeo nuevo te llega por email.
-
-## Cómo sabe que un vídeo es nuevo
-
-`state/last-seen.json` guarda una sola cosa, la fecha del último vídeo visto:
+`state/last-seen.json` stores one thing, the date of the last video it saw:
 
 ```json
 { "lastPublished": "2026-08-05T18:00:23+00:00" }
 ```
 
-Es nuevo todo lo que se haya publicado después de esa fecha. El workflow hace commit del archivo
-cuando cambia. Comparar fechas en vez de IDs tiene una ventaja: si Los Ecomonos editan el título de
-un vídeo viejo, YouTube lo vuelve a sacar en el feed, pero su fecha sigue siendo antigua y no genera
-un aviso falso.
+Anything published after that is new, and the workflow commits the file when it changes.
 
-Si un envío falla a mitad de una tanda, solo se guarda hasta el último enviado con éxito: el resto
-se reintenta en la siguiente ejecución, sin duplicados.
+Dates rather than IDs, because if they go back and edit an old video's title, YouTube shoves it back
+into the feed — but its publish date stays old, so nothing gets sent. And if one mail fails halfway
+through a batch, the file only records what actually went out, so the rest get retried next time
+instead of arriving twice.
 
-## Probarlo en local
+## Running it locally
 
 ```bash
 npm install
-export GMAIL_USER='tu@gmail.com'
+export GMAIL_USER='you@gmail.com'
 export GMAIL_APP_PASSWORD='abcd efgh ijkl mnop'
-export STATE_PATH=/tmp/ecomonos.json   # para no tocar el estado real del repo
+export STATE_PATH=/tmp/ecomonos.json   # keeps the repo's real state out of it
 
 npm run build
-node dist/index.js   # primera vez: solo guarda el punto de partida, no envía
+node dist/index.js   # first time it only saves the starting point
 ```
 
-Para que te llegue un email de verdad y comprobar que todo funciona, retrasa la fecha guardada
-y vuelve a ejecutarlo:
+To actually get a mail and see it work, backdate the saved file and run it again:
 
 ```bash
 echo '{"lastPublished":"2026-07-25T00:00:00+00:00"}' > /tmp/ecomonos.json
@@ -80,9 +59,9 @@ node dist/index.js
 
 ## Variables
 
-Solo las dos primeras son obligatorias; el resto tiene valores por defecto.
+Only the first two are required.
 
-| Variable | Por defecto |
+| Variable | Default |
 | --- | --- |
 | `GMAIL_USER` | — |
 | `GMAIL_APP_PASSWORD` | — |
@@ -90,11 +69,13 @@ Solo las dos primeras son obligatorias; el resto tiene valores por defecto.
 | `YOUTUBE_CHANNEL_ID` | `UCyYkUq0qMNP-ea7LEvspkug` (Los Ecomonos) |
 | `STATE_PATH` | `state/last-seen.json` |
 
-## A tener en cuenta
+## Worth knowing
 
-- El aviso tarda hasta ~30 min, más el retraso propio de GitHub. Su cron es best-effort: llega tarde
-  a menudo y muy de vez en cuando se salta una ejecución.
-- **GitHub desactiva los workflows programados tras 60 días sin actividad en el repo.** Avisa por
-  email antes; cualquier commit (o darle a "Run workflow") lo reactiva.
-- Los Shorts y los estrenos salen en el feed como vídeos normales. En un estreno, la fecha es la de
-  anuncio, así que el aviso te llega al programarse, no al emitirse.
+Mail can take up to ~30 minutes, plus however late GitHub feels like being — their cron is
+best-effort and skips a run now and then.
+
+GitHub also disables scheduled workflows after 60 days of no activity in the repo. It warns you by
+email first, and any commit (or hitting "Run workflow") brings it back.
+
+Shorts and premieres come through the feed as ordinary videos. For a premiere the date is when it
+was announced, so you hear about it when it gets scheduled, not when it airs.
